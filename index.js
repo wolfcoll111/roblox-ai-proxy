@@ -3,6 +3,9 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// The URL for the free GPT-2 model on Hugging Face
+const API_URL = "https://api-inference.huggingface.co/models/gpt2";
+
 app.use(express.json());
 
 app.post("/chat", async (req, res) => {
@@ -11,41 +14,45 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  const systemPrompt = "You are a helpful and friendly NPC in a roleplay game. Keep your answers concise and in character.";
-  
+  // We create a simple prompt for the NPC.
+  // The AI will try to complete this text.
+  const systemPrompt = `You are a friendly guard in a medieval village. A traveler approaches you.
+Traveler: ${message}
+Guard:`; // The AI will generate the guard's response here.
+
   try {
-    const response = await fetch("https://api.replicate.com/v1/predictions", {
+    const response = await fetch(API_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Token ${process.env.REPLICATE_API_KEY}`,
+        "Authorization": `Bearer ${process.env.HF_API_KEY}`, // Using the new key name
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        version: "02e509c789964a7ea8736978a43525956ef40397be9033abf9fd2badfe68c9e3",
-        input: { prompt: message, system_prompt: systemPrompt, max_new_tokens: 200 },
+        inputs: systemPrompt,
+        parameters: {
+          max_new_tokens: 50, // Keep responses short and snappy
+          temperature: 0.8,   // Makes the AI a bit more creative
+          repetition_penalty: 1.2,
+          return_full_text: false, // IMPORTANT: We only want the AI's generated part
+        },
       }),
     });
 
     if (!response.ok) {
       const error = await response.json();
-      console.error("Replicate API Error:", error);
+      console.error("Hugging Face API Error:", error);
+      // Handle model loading error specifically
+      if (error.error && error.error.includes("is currently loading")) {
+         return res.json({ reply: "My mind is warming up... ask me again in a moment." });
+      }
       return res.status(500).json({ error: "Failed to get a response from the AI." });
     }
     
-    let prediction = await response.json();
+    const prediction = await response.json();
     
-    while (prediction.status !== "succeeded" && prediction.status !== "failed") {
-      await new Promise(resolve => setTimeout(resolve, 250));
-      const pollResponse = await fetch(prediction.urls.get, { headers: { "Authorization": `Token ${process.env.REPLICATE_API_KEY}` } });
-      prediction = await pollResponse.json();
-    }
+    // The response is an array with one object, we get the generated_text
+    const aiResponse = prediction[0].generated_text.trim();
     
-    if (prediction.status === "failed") {
-      console.error("Prediction Failed:", prediction.error);
-      return res.status(500).json({ error: "AI prediction failed." });
-    }
-
-    const aiResponse = prediction.output.join("");
     res.json({ reply: aiResponse });
 
   } catch (error) {
@@ -55,5 +62,5 @@ app.post("/chat", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Proxy server is running on port ${PORT}`);
+  console.log(`Proxy server for Hugging Face is running on port ${PORT}`);
 });
