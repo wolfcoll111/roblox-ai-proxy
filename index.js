@@ -3,7 +3,6 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// The URL for the free GPT-2 model on Hugging Face
 const API_URL = "https://api-inference.huggingface.co/models/gpt2";
 
 app.use(express.json());
@@ -14,49 +13,63 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  // We create a simple prompt for the NPC.
-  // The AI will try to complete this text.
   const systemPrompt = `You are a friendly guard in a medieval village. A traveler approaches you.
 Traveler: ${message}
-Guard:`; // The AI will generate the guard's response here.
+Guard:`;
 
   try {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.HF_API_KEY}`, // Using the new key name
+        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         inputs: systemPrompt,
         parameters: {
-          max_new_tokens: 50, // Keep responses short and snappy
-          temperature: 0.8,   // Makes the AI a bit more creative
+          max_new_tokens: 50,
+          temperature: 0.8,
           repetition_penalty: 1.2,
-          return_full_text: false, // IMPORTANT: We only want the AI's generated part
+          return_full_text: false,
         },
       }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error("Hugging Face API Error:", error);
-      // Handle model loading error specifically
-      if (error.error && error.error.includes("is currently loading")) {
-         return res.json({ reply: "My mind is warming up... ask me again in a moment." });
-      }
-      return res.status(500).json({ error: "Failed to get a response from the AI." });
+    // ========== THE NEW, MORE ROBUST ERROR HANDLING STARTS HERE ==========
+
+    const contentType = response.headers.get("content-type");
+
+    // Check if the response is successful AND is in the expected JSON format
+    if (response.ok && contentType && contentType.includes("application/json")) {
+        const prediction = await response.json();
+        
+        // Handle a successful but empty response
+        if (!prediction || !prediction[0] || !prediction[0].generated_text) {
+             console.error("Hugging Face API Error: Received valid JSON but it was empty.", prediction);
+             return res.json({ reply: "I'm at a loss for words..." });
+        }
+
+        const aiResponse = prediction[0].generated_text.trim();
+        return res.json({ reply: aiResponse });
+
+    } else {
+        // If it's not JSON or not OK, it's an error. Read it as plain text.
+        const errorText = await response.text();
+        console.error("Hugging Face API Error: Did not receive a valid JSON response.");
+        console.error("Status Code:", response.status, response.statusText);
+        console.error("Response Body:", errorText); // This will show us the "N..." message!
+
+        // Send a user-friendly message back to Roblox
+        if (errorText.includes("is currently loading")) {
+             return res.json({ reply: "My mind is warming up... ask me again in 20 seconds." });
+        } else {
+             return res.json({ reply: "The local magi are busy... Try asking me again in a moment." });
+        }
     }
-    
-    const prediction = await response.json();
-    
-    // The response is an array with one object, we get the generated_text
-    const aiResponse = prediction[0].generated_text.trim();
-    
-    res.json({ reply: aiResponse });
+    // ========== ERROR HANDLING ENDS HERE ==========
 
   } catch (error) {
-    console.error("Server Error:", error);
+    console.error("Server Error (Catch Block):", error);
     res.status(500).json({ error: "An internal server error occurred." });
   }
 });
