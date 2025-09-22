@@ -3,8 +3,8 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// UPGRADED MODEL: Using the powerful and popular Mistral-7B model
-const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
+// RELIABLE MODEL: Using Microsoft's Phi-3-mini, which is stable on the free API
+const API_URL = "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct";
 
 app.use(express.json());
 
@@ -14,8 +14,8 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  // UPDATED PROMPT: Mistral uses a specific format with [INST] tags for best results.
-  const systemPrompt = `<s>[INST] You are a friendly guard in a medieval village. Keep your answers concise and in character. A traveler approaches and says: '${message}' What do you say back? [/INST]`;
+  // UPDATED PROMPT: Phi-3 uses a specific format with <|user|> and <|assistant|> tags for best results.
+  const systemPrompt = `<|user|>\nYou are a friendly guard in a medieval village. Keep your answers concise and in character. A traveler approaches and says: '${message}' What do you say back?<|end|>\n<|assistant|>`;
 
   try {
     const response = await fetch(API_URL, {
@@ -27,7 +27,7 @@ app.post("/chat", async (req, res) => {
       body: JSON.stringify({
         inputs: systemPrompt,
         parameters: {
-          max_new_tokens: 60,   // Giving it a bit more room to talk
+          max_new_tokens: 60,
           temperature: 0.7,
           repetition_penalty: 1.1,
           return_full_text: false, // We only want the AI's reply
@@ -55,7 +55,9 @@ app.post("/chat", async (req, res) => {
         console.error("Response Body:", errorText);
 
         if (errorText.includes("is currently loading")) {
-             return res.json({ reply: "My mind is warming up... ask me again in a minute. This is a big thought." });
+             return res.json({ reply: "My mind is warming up... ask me again in a minute." });
+        } else if (response.status === 503) {
+             return res.json({ reply: "My mind is warming up, the servers are busy... ask me again in a minute." });
         } else {
              return res.json({ reply: "The local magi are busy... Try asking me again in a moment." });
         }
