@@ -3,7 +3,8 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const API_URL = "https://api-inference.huggingface.co/models/gpt2";
+// UPGRADED MODEL: Using the powerful and popular Mistral-7B model
+const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
 
 app.use(express.json());
 
@@ -13,9 +14,8 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  const systemPrompt = `You are a friendly guard in a medieval village. A traveler approaches you.
-Traveler: ${message}
-Guard:`;
+  // UPDATED PROMPT: Mistral uses a specific format with [INST] tags for best results.
+  const systemPrompt = `<s>[INST] You are a friendly guard in a medieval village. Keep your answers concise and in character. A traveler approaches and says: '${message}' What do you say back? [/INST]`;
 
   try {
     const response = await fetch(API_URL, {
@@ -27,23 +27,19 @@ Guard:`;
       body: JSON.stringify({
         inputs: systemPrompt,
         parameters: {
-          max_new_tokens: 50,
-          temperature: 0.8,
-          repetition_penalty: 1.2,
-          return_full_text: false,
+          max_new_tokens: 60,   // Giving it a bit more room to talk
+          temperature: 0.7,
+          repetition_penalty: 1.1,
+          return_full_text: false, // We only want the AI's reply
         },
       }),
     });
-
-    // ========== THE NEW, MORE ROBUST ERROR HANDLING STARTS HERE ==========
-
+    
     const contentType = response.headers.get("content-type");
 
-    // Check if the response is successful AND is in the expected JSON format
     if (response.ok && contentType && contentType.includes("application/json")) {
         const prediction = await response.json();
         
-        // Handle a successful but empty response
         if (!prediction || !prediction[0] || !prediction[0].generated_text) {
              console.error("Hugging Face API Error: Received valid JSON but it was empty.", prediction);
              return res.json({ reply: "I'm at a loss for words..." });
@@ -53,20 +49,17 @@ Guard:`;
         return res.json({ reply: aiResponse });
 
     } else {
-        // If it's not JSON or not OK, it's an error. Read it as plain text.
         const errorText = await response.text();
         console.error("Hugging Face API Error: Did not receive a valid JSON response.");
         console.error("Status Code:", response.status, response.statusText);
-        console.error("Response Body:", errorText); // This will show us the "N..." message!
+        console.error("Response Body:", errorText);
 
-        // Send a user-friendly message back to Roblox
         if (errorText.includes("is currently loading")) {
-             return res.json({ reply: "My mind is warming up... ask me again in 20 seconds." });
+             return res.json({ reply: "My mind is warming up... ask me again in a minute. This is a big thought." });
         } else {
              return res.json({ reply: "The local magi are busy... Try asking me again in a moment." });
         }
     }
-    // ========== ERROR HANDLING ENDS HERE ==========
 
   } catch (error) {
     console.error("Server Error (Catch Block):", error);
